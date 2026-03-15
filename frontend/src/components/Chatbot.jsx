@@ -35,7 +35,7 @@ function Chatbot() {
     setIsTyping(true)
 
     try {
-      const response = await axios.post("http://localhost:5000/chat", {
+      const response = await axios.post("https://chatpati-backend.onrender.com/chat", {
         messages: [...messages, userMsg].map(m => ({
           role: m.role,
           content: m.content
@@ -52,7 +52,7 @@ function Chatbot() {
       console.error(err)
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: "Arre kuch gadbad ho gayi! Thoda baad try kar 😅",
+        content: "Arre kuch gadbad ho gayi! Thoda baad mei try kar 😅",
         time: formatTime(new Date())
       }])
     } finally {
