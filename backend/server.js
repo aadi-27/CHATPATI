@@ -10,13 +10,7 @@ const app = express();
 const db = new Database("./chatpati.db");
 let userName = null;
 
-app.use(cors({
-  origin: [
-    "https://chatpati-nine.vercel.app/",
-    "http://localhost:5173"
-  ],
-  methods: ["GET", "POST"],
-}));
+app.use(cors());
 app.use(express.json());
 
 // ---------- DATABASE SETUP ----------
