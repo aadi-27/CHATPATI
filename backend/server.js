@@ -12,7 +12,7 @@ let userName = null;
 
 app.use(cors({
   origin: [
-    "https://chatpati-j3wfpm30u-aadi-27s-projects.vercel.app",
+    "https://chatpati-nine.vercel.app/",
     "http://localhost:5173"
   ],
   methods: ["GET", "POST"],
