@@ -49,12 +49,13 @@ function Chatbot() {
       }])
 
     } catch (err) {
-      console.error(err)
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: "Arre kuch gadbad ho gayi! Thoda baad mei try kar 😅",
-        time: formatTime(new Date())
-      }])
+  setMessages(prev => [...prev, {
+    role: "assistant",
+    content: err.response?.status === 429 
+      ? "Arre yaar bahut saare sawaal! Thodi der baad try kar 😅🔥" 
+      : "Arre kuch gadbad ho gayi! Thoda baad mei try kar 😅",
+    time: formatTime(new Date())
+  }])
     } finally {
       setIsTyping(false)
     }
