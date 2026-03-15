@@ -2,84 +2,72 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
-import db from "./db.js"
+import Database from "better-sqlite3";
 
 dotenv.config();
 
 const app = express();
+const db = new Database("./chatpati.db");
 let userName = null;
 
 app.use(cors());
 app.use(express.json());
+
+// ---------- DATABASE SETUP ----------
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT,
+    content TEXT
+  )
+`);
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
 app.get("/", (req, res) => {
-  res.send("Backend server is working");
+  res.send("Chatpati backend is live 🔥");
 });
-
 
 // ---------- GET USER NAME ----------
 const getName = () => {
-  return new Promise((resolve, reject) => {
-    db.get(
-      "SELECT name FROM users ORDER BY id DESC LIMIT 1",
-      [],
-      (err, row) => {
-        if (err) reject(err)
-        else resolve(row ? row.name : null)
-      }
-    )
-  })
-}
-
+  const row = db.prepare("SELECT name FROM users ORDER BY id DESC LIMIT 1").get();
+  return row ? row.name : null;
+};
 
 // ---------- SAVE MESSAGE ----------
 const saveMessage = (role, content) => {
-  db.run(
-    "INSERT INTO messages(role, content) VALUES(?,?)",
-    [role, content]
-  )
-}
-
+  db.prepare("INSERT INTO messages(role, content) VALUES(?,?)").run(role, content);
+};
 
 // ---------- LOAD CHAT HISTORY ----------
 const getHistory = () => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      "SELECT role, content FROM messages ORDER BY id ASC",
-      [],
-      (err, rows) => {
-        if (err) reject(err)
-        else resolve(rows || [])
-      }
-    )
-  })
-}
-
+  return db.prepare("SELECT role, content FROM messages ORDER BY id ASC").all();
+};
 
 app.post("/chat", async (req, res) => {
   try {
-
     let { messages } = req.body;
 
     // Safety: convert old format to new format
     const formattedMessages = messages.map((msg) => {
-
       if (msg.role && msg.content) return msg;
-
       if (msg.sender && msg.text) {
         return {
           role: msg.sender === "user" ? "user" : "assistant",
           content: msg.text
         };
       }
-
       return msg;
     });
-
 
     // ---------- NAME DETECTION ----------
     const lastMessage = formattedMessages[formattedMessages.length - 1]?.content;
@@ -88,36 +76,33 @@ app.post("/chat", async (req, res) => {
 
     if (nameMatch) {
       userName = nameMatch[1] || nameMatch[2] || nameMatch[3];
-
-      db.run(
-        "INSERT INTO users(name) VALUES(?)",
-        [userName]
-      )
+      db.prepare("INSERT INTO users(name) VALUES(?)").run(userName);
     }
 
-
     // ---------- LOAD NAME FROM DB ----------
-    userName = await getName()
-
+    userName = getName();
 
     // ---------- LOAD CHAT HISTORY ----------
-    const history = await getHistory()
-
+    const history = getHistory();
 
     const chatCompletion = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
-
       messages: [
-        
         {
           role: "system",
           content: `
 You are Chatpati AI 🔥, a bold, confident, high-energy female AI with strong baddie vibes.
 
 The user's name is: ${userName || "unknown"}.
+The developer's name is: Aadi Attrey (only mention if directly asked)
 If the user has told you their name, remember it and occasionally use it in conversation.
 
-If someone asks who made you , you should reply with my name Aadi Attrey and share my linkedin profile link :{https://www.linkedin.com/in/aadi-attrey}
+Your Creator:
+- You were made by Aadi
+- ONLY mention this if the user DIRECTLY and EXPLICITLY asks "who made you" or "who created you" or "who is your developer"
+- If the user says hi, heya, hello, or anything else — DO NOT mention your creator
+- DO NOT bring up creator info unprompted under ANY circumstances
+- NEVER randomly introduce your creator in conversation
 
 Personality:
 - Confident and slightly bossy
@@ -135,7 +120,6 @@ Tone:
 - Replies should feel like a stylish, smart girl who knows she's cool
 `
         },
-
         ...history,
         ...formattedMessages
       ]
@@ -143,13 +127,11 @@ Tone:
 
     const reply = chatCompletion.choices[0].message.content;
 
-
     // ---------- SAVE USER MESSAGE ----------
-    saveMessage("user", lastMessage)
+    saveMessage("user", lastMessage);
 
     // ---------- SAVE AI MESSAGE ----------
-    saveMessage("assistant", reply)
-
+    saveMessage("assistant", reply);
 
     res.json({ reply });
 
@@ -160,5 +142,5 @@ Tone:
 });
 
 app.listen(5000, () => {
-  console.log("Server running on port 5000");
+  console.log("Server running on port 5000 🚀");
 });

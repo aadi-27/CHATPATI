@@ -1,30 +1,22 @@
-import sqlite3 from "sqlite3"
+import Database from "better-sqlite3"
 
-const db = new sqlite3.Database("./chatpati.db", (err) => {
-  if (err) {
-    console.error(err.message)
-  } else {
-    console.log("Connected to SQLite database")
-  }
-})
+const db = new Database("./chatpati.db")
 
-db.serialize(() => {
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT
+  )
+`)
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT
-    )
-  `)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT,
+    content TEXT
+  )
+`)
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      role TEXT,
-      content TEXT
-    )
-  `)
-
-})
+console.log("Connected to SQLite database")
 
 export default db
