@@ -29,68 +29,27 @@ db.exec(`
   )
 `);
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 app.get("/", (req, res) => {
   res.send("Chatpati backend is live 🔥");
 });
 
-// ---------- GET USER NAME ----------
 const getName = () => {
   const row = db.prepare("SELECT name FROM users ORDER BY id DESC LIMIT 1").get();
   return row ? row.name : null;
 };
 
-// ---------- SAVE MESSAGE ----------
 const saveMessage = (role, content) => {
   db.prepare("INSERT INTO messages(role, content) VALUES(?,?)").run(role, content);
 };
 
-// ---------- LOAD CHAT HISTORY ----------
 const getHistory = () => {
   return db.prepare("SELECT role, content FROM messages ORDER BY id ASC").all();
 };
 
-app.post("/chat", async (req, res) => {
-  try {
-    let { messages } = req.body;
-
-    // Safety: convert old format to new format
-    const formattedMessages = messages.map((msg) => {
-      if (msg.role && msg.content) return msg;
-      if (msg.sender && msg.text) {
-        return {
-          role: msg.sender === "user" ? "user" : "assistant",
-          content: msg.text
-        };
-      }
-      return msg;
-    });
-
-    // ---------- NAME DETECTION ----------
-    const lastMessage = formattedMessages[formattedMessages.length - 1]?.content;
-
-    const nameMatch = lastMessage?.match(/my name is (.+)|i am (.+)|i'm (.+)/i);
-
-    if (nameMatch) {
-      userName = nameMatch[1] || nameMatch[2] || nameMatch[3];
-      db.prepare("INSERT INTO users(name) VALUES(?)").run(userName);
-    }
-
-    // ---------- LOAD NAME FROM DB ----------
-    userName = getName();
-
-    // ---------- LOAD CHAT HISTORY ----------
-    const history = getHistory();
-
-    const chatCompletion = await groq.chat.completions.create({
-     model: "llama-3.1-8b-instant", 
-      messages: [
-        {
-          role: "system",
-          content: `
+// ---------- SYSTEM PROMPT ----------
+const getSystemPrompt = (userName) => `
 You are Chatpati AI 🔥, a bold, confident, high-energy female AI with strong baddie vibes.
 
 The user's name is: ${userName || "unknown"}.
@@ -118,25 +77,108 @@ Tone:
 - Confident and charismatic
 - Never robotic
 - Replies should feel like a stylish, smart girl who knows she's cool
-`
-        },
-        ...history,
-        ...formattedMessages
-      ]
+`;
+
+// ---------- GEMINI FALLBACK ----------
+const tryGemini = async (messages, userName) => {
+  console.log("Switching to Gemini 🔵");
+
+  const systemPrompt = getSystemPrompt(userName);
+
+  const geminiMessages = messages
+    .filter(m => m.role !== "system")
+    .map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }]
+    }));
+
+  // Inject system prompt as first user message for Gemini
+  geminiMessages.unshift({
+    role: "user",
+    parts: [{ text: systemPrompt }]
+  });
+  geminiMessages.splice(1, 0, {
+    role: "model",
+    parts: [{ text: "Understood! Main Chatpati AI hoon 🔥 Ready to chat!" }]
+  });
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: geminiMessages })
+    }
+  );
+
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return { reply: data.candidates[0].content.parts[0].text, api: "gemini" };
+};
+
+// ---------- GROQ PRIMARY ----------
+const tryGroq = async (messages) => {
+  console.log("Using Groq 🟢");
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages
+  });
+  return { reply: completion.choices[0].message.content, api: "groq" };
+};
+
+app.post("/chat", async (req, res) => {
+  try {
+    let { messages } = req.body;
+
+    const formattedMessages = messages.map((msg) => {
+      if (msg.role && msg.content) return msg;
+      if (msg.sender && msg.text) {
+        return {
+          role: msg.sender === "user" ? "user" : "assistant",
+          content: msg.text
+        };
+      }
+      return msg;
     });
 
-    const reply = chatCompletion.choices[0].message.content;
+    const lastMessage = formattedMessages[formattedMessages.length - 1]?.content;
 
-    // ---------- SAVE USER MESSAGE ----------
+    const nameMatch = lastMessage?.match(/my name is (.+)|i am (.+)|i'm (.+)/i);
+    if (nameMatch) {
+      userName = nameMatch[1] || nameMatch[2] || nameMatch[3];
+      db.prepare("INSERT INTO users(name) VALUES(?)").run(userName);
+    }
+
+    userName = getName();
+    const history = getHistory();
+
+    const allMessages = [
+      { role: "system", content: getSystemPrompt(userName) },
+      ...history,
+      ...formattedMessages
+    ];
+
+    let result;
+
+    // Try Groq first, fallback to Gemini if rate limited
+    try {
+      result = await tryGroq(allMessages);
+    } catch (groqError) {
+      console.error("Groq failed:", groqError?.status, groqError?.message);
+      if (groqError?.status === 429 || groqError?.status === 503 || groqError?.status === 500) {
+        result = await tryGemini(allMessages, userName);
+      } else {
+        throw groqError;
+      }
+    }
+
     saveMessage("user", lastMessage);
+    saveMessage("assistant", result.reply);
 
-    // ---------- SAVE AI MESSAGE ----------
-    saveMessage("assistant", reply);
-
-    res.json({ reply });
+    res.json({ reply: result.reply, api: result.api });
 
   } catch (error) {
-    console.error("Groq error:", error);
+    console.error("Both APIs failed:", error);
     res.status(500).json({ error: "AI request failed" });
   }
 });

@@ -11,6 +11,7 @@ function Chatbot() {
       role: "assistant",
       content: "Heyy! Main hoon Chatpati AI — seedha jawaab nahi dungi, but ekdum sahi dungi 😏 Kya poochna hai?",
       time: formatTime(new Date()),
+      api: null
     }
   ])
   const [input, setInput] = useState("")
@@ -27,7 +28,8 @@ function Chatbot() {
     const userMsg = {
       role: "user",
       content: input,
-      time: formatTime(new Date())
+      time: formatTime(new Date()),
+      api: null
     }
 
     setMessages(prev => [...prev, userMsg])
@@ -45,17 +47,19 @@ function Chatbot() {
       setMessages(prev => [...prev, {
         role: "assistant",
         content: response.data.reply,
-        time: formatTime(new Date())
+        time: formatTime(new Date()),
+        api: response.data.api
       }])
 
     } catch (err) {
-  setMessages(prev => [...prev, {
-    role: "assistant",
-    content: err.response?.status === 429 
-      ? "Arre yaar bahut saare sawaal! Thodi der baad try kar 😅🔥" 
-      : "Arre kuch gadbad ho gayi! Thoda baad mei try kar 😅",
-    time: formatTime(new Date())
-  }])
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: err.response?.status === 429
+          ? "Arre yaar bahut saare sawaal! Thodi der baad try kar 😅🔥"
+          : "Arre kuch gadbad ho gayi! Thoda baad mei try kar 😅",
+        time: formatTime(new Date()),
+        api: null
+      }])
     } finally {
       setIsTyping(false)
     }
@@ -87,6 +91,11 @@ function Chatbot() {
               <div>
                 <div className={`bubble ${msg.role === "assistant" ? "bot" : "user"}`}>
                   {msg.content}
+                  {msg.api && (
+                    <div style={{ fontSize: "10px", marginTop: "6px", opacity: 0.5 }}>
+                      {msg.api === "gemini" ? "🔵 Gemini" : "🟢 Groq"}
+                    </div>
+                  )}
                 </div>
                 <div className="msg-time">{msg.time}</div>
               </div>
